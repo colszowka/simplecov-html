@@ -18,11 +18,15 @@ module SimpleCov
     class HTMLFormatter
       def initialize
         @branchable_result = SimpleCov.branch_coverage?
+        @inline_assets = !ENV["SIMPLECOV_INLINE_ASSETS"].nil?
+        @public_assets_dir = File.join(File.dirname(__FILE__), "../public/")
       end
 
       def format(result)
-        Dir[File.join(File.dirname(__FILE__), "../public/*")].each do |path|
-          FileUtils.cp_r(path, asset_output_path)
+        unless @inline_assets
+          Dir[File.join(@public_assets_dir, "*")].each do |path|
+            FileUtils.cp_r(path, asset_output_path)
+          end
         end
 
         File.open(File.join(output_path, "index.html"), "wb") do |file|
@@ -70,7 +74,24 @@ module SimpleCov
       end
 
       def assets_path(name)
+        return asset_inline(name) if @inline_assets
+
         File.join("./assets", SimpleCov::Formatter::HTMLFormatter::VERSION, name)
+      end
+
+      def asset_inline(name)
+        path = File.join(@public_assets_dir, name)
+
+        # Only have a few content types, just hardcode them
+        content_type = {
+          ".js" => "text/javascript",
+          ".png" => "image/png",
+          ".gif" => "image/gif",
+          ".css" => "text/css",
+        }[File.extname(name)]
+
+        base64_content = Base64.strict_encode64 File.open(path).read
+        "data:#{content_type};base64,#{base64_content}"
       end
 
       # Returns the html for the given source_file
