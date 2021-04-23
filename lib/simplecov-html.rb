@@ -15,9 +15,10 @@ end
 
 module SimpleCov
   module Formatter
-    class HTMLFormatter
+    class HTMLFormatter # rubocop:disable Metrics/ClassLength
       def initialize
-        @branchable_result = SimpleCov.branch_coverage?
+        @branch_coverage = SimpleCov.branch_coverage?
+        @method_coverage = SimpleCov.method_coverage?
       end
 
       def format(result)
@@ -32,18 +33,31 @@ module SimpleCov
       end
 
       def output_message(result)
-        "Coverage report generated for #{result.command_name} to #{output_path}. #{result.covered_lines} / #{result.total_lines} LOC (#{result.covered_percent.round(2)}%) covered."
+        parts = []
+        parts << "Coverage report generated for #{result.command_name} to #{output_path}"
+        parts << "Line coverage: #{render_stats(result, :line)}"
+        parts << "Branch coverage: #{render_stats(result, :branch)}" if branch_coverage?
+        parts << "Method coverage: #{render_stats(result, :method)}" if method_coverage?
+
+        parts.join("\n")
       end
 
-      def branchable_result?
+      def branch_coverage?
         # cached in initialize because we truly look it up a whole bunch of times
         # and it's easier to cache here then in SimpleCov because there we might
         # still enable/disable branch coverage criterion
-        @branchable_result
+        @branch_coverage
+      end
+
+      def method_coverage?
+        # cached in initialize because we truly look it up a whole bunch of times
+        # and it's easier to cache here then in SimpleCov because there we might
+        # still enable/disable branch coverage criterion
+        @method_coverage
       end
 
       def line_status?(source_file, line)
-        if branchable_result? && source_file.line_with_missed_branch?(line.number)
+        if branch_coverage? && source_file.line_with_missed_branch?(line.number)
           "missed-branch"
         else
           line.status
@@ -82,11 +96,11 @@ module SimpleCov
 
       # Returns a table containing the given source files
       def formatted_file_list(title, source_files)
-        title_id = title.gsub(/^[^a-zA-Z]+/, "").gsub(/[^a-zA-Z0-9\-\_]/, "")
+        title_id = title.gsub(/^[^a-zA-Z]+/, "").gsub(/[^a-zA-Z0-9\-_]/, "")
         # Silence a warning by using the following variable to assign to itself:
         # "warning: possibly useless use of a variable in void context"
         # The variable is used by ERB via binding.
-        title_id = title_id
+        title_id = title_id # rubocop:disable Lint/SelfAssignment
         template("file_list").result(binding)
       end
 
@@ -129,6 +143,17 @@ module SimpleCov
 
       def link_to_source_file(source_file)
         %(<a href="##{id source_file}" class="src_link" title="#{shortened_filename source_file}">#{shortened_filename source_file}</a>)
+      end
+
+      def render_stats(result, criterion)
+        stats = result.coverage_statistics.fetch(criterion)
+
+        Kernel.format(
+          "%<covered>d / %<total>d (%<percent>.2f%%)",
+          :covered => stats.covered,
+          :total => stats.total,
+          :percent => stats.percent
+        )
       end
     end
   end
